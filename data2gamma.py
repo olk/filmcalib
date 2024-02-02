@@ -144,10 +144,10 @@ def relative_exposure(density):
     return 10 * log10(2) - density
 
 
-def average_density(data):
+def average_density(fog, data):
     data = [(exposure, ast.literal_eval(density)) for (exposure, density) in data]
     data = data[::-1]
-    return [(round(relative_exposure(float(exposure)), 3), round(round(reduce(lambda a, b: float(a) + float(b), density) / len(density), 3), 3)) for exposure, density in data]
+    return [(round(relative_exposure(float(exposure)), 3), round(round(reduce(lambda a, b: float(a) + float(b), density) / len(density), 3) - fog, 3)) for exposure, density in data]
 
 
 def parse_data(file_p):
@@ -155,7 +155,7 @@ def parse_data(file_p):
     config.read(str(file_p))
     meta = config['META']
     data = config.items('DATA')
-    data = average_density(data)
+    data = average_density(float(meta['fog']), data)
     return meta, data
 
 
@@ -168,7 +168,7 @@ def evaluate(file_p, model, meta):
     ax.set_title('{}: {}@{} {}[{}] {}/{} {}'.format(
         'Lambrecht/Woodhouse',
         meta['film'],
-        meta['DIN'],
+        meta['ISO'],
         meta['developer'],
         meta['dilution'],
         meta['time'],
@@ -178,8 +178,8 @@ def evaluate(file_p, model, meta):
     ax.grid(which='both')
     ax.scatter(model.exposure[model.msk], model.density[model.msk], marker='+', color='limegreen')
     ax.scatter(model.exposure[np.invert(model.msk)], model.density[np.invert(model.msk)], marker='+', color='black')
-    ax.scatter(model.exposure_at_min_density, model.min_density, marker='o', color='red', label='exposure(Dmin)={}'.format(model.exposure_at_min_density))
-    ax.scatter(model.exposure_at_max_density, model.max_density, marker='o', color='red', label='exposure(Dmax)={}'.format(model.exposure_at_max_density))
+    ax.scatter(model.exposure_at_min_density, model.min_density, marker='.', color='red', label='exposure(Dmin)={}'.format(model.exposure_at_min_density))
+    ax.scatter(model.exposure_at_max_density, model.max_density, marker='.', color='red', label='exposure(Dmax)={}'.format(model.exposure_at_max_density))
     line = np.linspace(model.null_point, max(model.exposure_at_max_density, model.exposure[-1]), 200)
     ax.plot(line, model._model.predict(line.reshape(-1, 1)), linewidth=1.0, label='linear regression', color='blue')
     ax.xaxis.set_major_locator(MultipleLocator(0.5))

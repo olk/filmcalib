@@ -122,11 +122,11 @@ def evaluate(file, model):
     fig, ax = plt.subplots()
     ax.grid(which='both')
     ax.scatter(model.gamma, model.devtime, marker='+', color='blue')
-    ax.scatter(0.8, model.Nplus2, marker='o', color='red', label='N+2 = {}'.format(Nplus2))
-    ax.scatter(0.67, model.Nplus1, marker='o', color='red', label='N+1 = {}'.format(Nplus1))
-    ax.scatter(0.57, model.N, marker='o', color='red', label='N = {}'.format(N))
-    ax.scatter(0.5, model.Nminus1, marker='o', color='red', label='N-1 = {}'.format(Nminus1))
-    ax.scatter(0.44, model.Nminus2, marker='o', color='red', label='N-2 = {}'.format(Nminus2))
+    ax.scatter(0.8, model.Nplus2, marker='.', color='red', label='N+2 = {}'.format(Nplus2))
+    ax.scatter(0.67, model.Nplus1, marker='.', color='red', label='N+1 = {}'.format(Nplus1))
+    ax.scatter(0.57, model.N, marker='.', color='red', label='N = {}'.format(N))
+    ax.scatter(0.5, model.Nminus1, marker='.', color='red', label='N-1 = {}'.format(Nminus1))
+    ax.scatter(0.44, model.Nminus2, marker='.', color='red', label='N-2 = {}'.format(Nminus2))
     line = np.linspace(0.3, 0.9, 200)
     ax.plot(line, model._model.predict(line.reshape(-1, 1)), linewidth=1.0, color='blue')
     ax.xaxis.set_major_locator(MultipleLocator(0.1))
@@ -137,7 +137,7 @@ def evaluate(file, model):
     file = file.with_suffix('.png')
     plt.savefig(str(file), dpi=300)
     tbl = PrettyTable()
-    tbl.field_names = ["Zone development", "development time (21°C)"]
+    tbl.field_names = ["Zone development", "development time (18°C)"]
     tbl.add_row(["N+2", Nplus2])
     tbl.add_row(["N+1", Nplus1])
     tbl.add_row(["N", N])
@@ -153,6 +153,7 @@ def parse_data(file):
         for line in Lines:
             data.append(json.loads(line))
     data.sort()
+    print(data)
     return data
 
 
