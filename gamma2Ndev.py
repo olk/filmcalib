@@ -137,7 +137,7 @@ def evaluate(file, model):
     file = file.with_suffix('.png')
     plt.savefig(str(file), dpi=300)
     tbl = PrettyTable()
-    tbl.field_names = ["Zone development", "development time (18°C)"]
+    tbl.field_names = ["Zone development", "development time (21°C)"]
     tbl.add_row(["N+2", Nplus2])
     tbl.add_row(["N+1", Nplus1])
     tbl.add_row(["N", N])
