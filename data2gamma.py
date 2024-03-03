@@ -35,7 +35,8 @@ from sklearn.ensemble import IsolationForest
 
 def outliers_mask(x, y):
     dy = np.gradient(y, x)
-    rgr = IsolationForest(contamination=float(.20), random_state=42)
+    rgr = IsolationForest()
+    #rgr = IsolationForest(contamination=float(.20), random_state=42)
     rgr.fit(x.reshape(-1, 1), dy.reshape(-1, 1))
     dy_dt = rgr.predict(x.reshape(-1, 1)).flatten()
     msk = np.array([])
@@ -62,6 +63,10 @@ class Model(abc.ABC):
         self._density = np.array(self._density)
         self._msk = outliers_mask(self._exposure, self._density)
         self._process()
+
+    @abc.abstractmethod
+    def model_name(self):
+        'model name'
 
     @property
     def exposure(self):
@@ -125,6 +130,9 @@ class TheilSenRegressionModel(Model):
         self._exposure_at_max_density = round((1.37 - self._model.intercept_)/self._gamma, 2)
         self._null_point = round((0 - self._model.intercept_)/self._gamma, 2)
 
+    def model_name(self):
+        return __class__.__name__;
+
 
 class RANSACRegressionModel(Model):
     def __init__(self, data):
@@ -138,6 +146,9 @@ class RANSACRegressionModel(Model):
         self._exposure_at_min_density = round((0.17 - self._model.estimator_.intercept_[0])/self._gamma, 2)
         self._exposure_at_max_density = round((1.37 - self._model.estimator_.intercept_[0])/self._gamma, 2)
         self._null_point = round((0 - self._model.estimator_.intercept_[0])/self._gamma, 2)
+
+    def model_name(self):
+        return __class__.__name__;
 
 
 def relative_exposure(density):
@@ -188,9 +199,10 @@ def evaluate(file_p, model, meta):
     ax.set_ylabel('density')
     ax.legend(loc='upper left', bbox_to_anchor=(0.01, 0.99), borderaxespad=0.)
     handles, labels = ax.get_legend_handles_labels()
-    desc = 'gamma = {}\nr^2= {}'.format(
+    desc = 'gamma = {}\nr^2= {} ({})'.format(
         round(model.gamma, 2),
-        model.r_square)
+        model.r_square,
+        model.model_name())
     handles.append(mpatches.Patch(color='none', label=desc))
     plt.legend(handles=handles, fontsize=8)
     file_p = file_p.with_suffix('.png')
@@ -204,19 +216,18 @@ def serialize(result):
     print(json.dumps(result))
 
 
-def main(f):
-    file = Path(f).resolve()
-    assert file.exists()
+def main(file):
     meta, data = parse_data(file)
-    model = TheilSenRegressionModel(data)
-    #model = RANSACRegressionModel(data)
-    result = evaluate(file, model, meta)
+    model_theil = TheilSenRegressionModel(data)
+    model_ransac = RANSACRegressionModel(data)
+    result = evaluate(file, model_ransac, meta) if model_ransac.r_square > model_theil.r_square else evaluate(file, model_theil, meta)
     serialize(result)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--file', type=str)
-    parser.set_defaults(show=False)
     args = parser.parse_args()
-    main(args.file)
+    file = Path(args.file).resolve()
+    assert file.exists()
+    main(file)

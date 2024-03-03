@@ -28,9 +28,27 @@ from prettytable import PrettyTable
 from sklearn.linear_model import RANSACRegressor
 from sklearn.linear_model import TheilSenRegressor
 from sklearn.tree import DecisionTreeRegressor
+from sklearn.ensemble import IsolationForest
+
+
+def outliers_mask(x, y):
+    dy = np.gradient(y, x)
+    rgr = IsolationForest()
+    #rgr = IsolationForest(contamination=float(.20), random_state=42)
+    rgr.fit(x.reshape(-1, 1), dy.reshape(-1, 1))
+    dy_dt = rgr.predict(x.reshape(-1, 1)).flatten()
+    msk = np.array([])
+    for y in np.unique(dy_dt):
+        msk_ = dy_dt == y
+        # choose the list with most elements
+        if (np.count_nonzero(msk) < np.count_nonzero(msk_)):
+            msk = msk_
+    return msk
 
 
 class Model(abc.ABC):
+    _msk = np.array([])
+
     @abc.abstractmethod
     def _process(self):
         'process data'
@@ -39,7 +57,12 @@ class Model(abc.ABC):
         self._devtime, self._gamma, _ , _ = zip(*data)
         self._devtime = np.array(self._devtime)
         self._gamma = np.array(self._gamma)
+        self._msk = outliers_mask(self._gamma, self._devtime)
         self._process()
+
+    @abc.abstractmethod
+    def model_name(self):
+        'model name'
 
     @property
     def devtime(self):
@@ -73,6 +96,10 @@ class Model(abc.ABC):
     def r_square(self):
         return self._r2
 
+    @property
+    def msk(self):
+        return self._msk
+
     def predict(self, x):
         return self._model.predict(x)
 
@@ -83,13 +110,16 @@ class TheilSenRegressionModel(Model):
         super(TheilSenRegressionModel, self).__init__(data)
 
     def _process(self):
-        self._model = TheilSenRegressor().fit(self.gamma.reshape(-1, 1), self.devtime.reshape(-1, 1))
-        self._r2 = round(self._model.score(self.gamma.reshape(-1, 1), self.devtime.reshape(-1, 1)), 3)
+        self._model = TheilSenRegressor().fit(self.gamma[self.msk].reshape(-1, 1), self.devtime[self.msk].reshape(-1, 1))
+        self._r2 = round(self._model.score(self.gamma[self.msk].reshape(-1, 1), self.devtime[self.msk].reshape(-1, 1)), 3)
         self._Nplus2 = self.predict(np.array(0.8).reshape(-1, 1))[0]
         self._Nplus1 = self.predict(np.array(0.67).reshape(-1, 1))[0]
         self._N = self.predict(np.array(0.57).reshape(-1, 1))[0]
         self._Nminus1 = self.predict(np.array(0.5).reshape(-1, 1))[0]
         self._Nminus2 = self.predict(np.array(0.44).reshape(-1, 1))[0]
+
+    def model_name(self):
+        return __class__.__name__;
 
 
 class RANSACRegressionModel(Model):
@@ -97,13 +127,16 @@ class RANSACRegressionModel(Model):
         super(RANSACRegressionModel, self).__init__(data)
 
     def _process(self):
-        self._model = RANSACRegressor().fit(self.gamma.reshape(-1, 1), self.devtime.reshape(-1, 1))
-        self._r2 = round(self._model.score(self.gamma.reshape(-1, 1), self.devtime.reshape(-1, 1)), 3)
+        self._model = RANSACRegressor().fit(self.gamma[self.msk].reshape(-1, 1), self.devtime[self.msk].reshape(-1, 1))
+        self._r2 = round(self._model.score(self.gamma[self.msk].reshape(-1, 1), self.devtime[self.msk].reshape(-1, 1)), 3)
         self._Nplus2 = self.predict(np.array(0.8).reshape(-1, 1))[0][0]
         self._Nplus1 = self.predict(np.array(0.67).reshape(-1, 1))[0][0]
         self._N = self.predict(np.array(0.57).reshape(-1, 1))[0][0]
         self._Nminus1 = self.predict(np.array(0.5).reshape(-1, 1))[0][0]
         self._Nminus2 = self.predict(np.array(0.44).reshape(-1, 1))[0][0]
+
+    def model_name(self):
+        return __class__.__name__;
 
 
 def format_devtime(devtime):
@@ -120,6 +153,7 @@ def evaluate(file, model):
     Nminus1 = format_devtime(model.Nminus1)
     Nminus2 = format_devtime(model.Nminus2)
     fig, ax = plt.subplots()
+    ax.set_title('Lambrecht/Woodhouse', fontsize=10)
     ax.grid(which='both')
     ax.scatter(model.gamma, model.devtime, marker='+', color='blue')
     ax.scatter(0.8, model.Nplus2, marker='.', color='red', label='N+2 = {}'.format(Nplus2))
@@ -134,6 +168,12 @@ def evaluate(file, model):
     ax.set_xlabel('gamma')
     ax.set_ylabel('devtime')
     ax.legend(loc='upper left', bbox_to_anchor=(0.01, 0.99), borderaxespad=0.)
+    handles, labels = ax.get_legend_handles_labels()
+    desc = 'r^2= {} ({})'.format(
+        model.r_square,
+        model.model_name())
+    handles.append(mpatches.Patch(color='none', label=desc))
+    plt.legend(handles=handles, fontsize=8)
     file = file.with_suffix('.png')
     plt.savefig(str(file), dpi=300)
     tbl = PrettyTable()
@@ -159,15 +199,15 @@ def parse_data(file):
 
 def main(file):
     data = parse_data(file)
-    model = TheilSenRegressionModel(data)
-    #model = RANSACRegressionModel(data)
-    tbl = evaluate(file, model)
+    model_theil = TheilSenRegressionModel(data)
+    model_ransac = RANSACRegressionModel(data)
+    tbl = evaluate(file, model_ransac) if model_ransac.r_square > model_theil.r_square else evaluate(file, model_theil)
     print(tbl)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--file')
+    parser.add_argument('--file', type=str)
     args = parser.parse_args()
     file = Path(args.file).resolve()
     assert file.exists()
