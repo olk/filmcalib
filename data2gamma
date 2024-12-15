@@ -25,23 +25,81 @@ import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 import sys
+import pandas as pd
 
 from functools import reduce
 from math import log10
 from matplotlib.ticker import MultipleLocator
 from pathlib import Path
 from sklearn.linear_model import RANSACRegressor
-from sklearn.linear_model import TheilSenRegressor
 from sklearn.ensemble import IsolationForest
+from sklearn.covariance import EllipticEnvelope
+from sklearn.pipeline import make_pipeline
+from sklearn.kernel_approximation import Nystroem
+from sklearn.linear_model import SGDOneClassSVM
 
 
 def outliers_mask(x, y):
+    # return the gradient of an N-dimensional array
+    # example:
+    # array([ 1. ,  1.5,  2.5,  3.5,  4.5,  5. ])
+    # gradient is defined as (change in y)/(change in x)
+    # x, is the list index, so the difference between adjacent values is 1
+    # at the boundaries, the first difference is calculated
+    # this means that at each end of the array, the gradient given is simply,
+    # the difference between the end two values (divided by 1)
+    # away from the boundaries the gradient for a particular index is given by
+    # taking the difference between the the values either side and dividing by 2
+    # j[0] = (y[1]-y[0])/1 = (2-1)/1  = 1
+    # j[1] = (y[2]-y[0])/2 = (4-1)/2  = 1.5
+    # j[2] = (y[3]-y[1])/2 = (7-2)/2  = 2.5
+    # j[3] = (y[4]-y[2])/2 = (11-4)/2 = 3.5
+    # j[4] = (y[5]-y[3])/2 = (16-7)/2 = 4.5
+    # j[5] = (y[5]-y[4])/1 = (16-11)/1 = 5
     dy = np.gradient(y, x)
-    rgr = IsolationForest(contamination=float(.20), random_state=42)
-    rgr.fit(x.reshape(-1, 1), dy.reshape(-1, 1))
-    dy_dt = rgr.predict(x.reshape(-1, 1)).flatten()
+
+    # reshape(-1, 1), asking numpy to reshape the array with 1 column and as many
+    # rows as necessary to accommodate the data
+    # this operation will result in a 2D array with a shape (n, 1), where n is the
+    # number of elements in your original array
+    # example:
+    # # Original array
+    # arr = np.array([1, 2, 3, 4, 5, 6])
+    # print('Original array shape:', arr.shape)
+    #
+    # # Reshape array
+    # reshaped_arr = arr.reshape(-1, 1)
+    # print('Reshaped array shape:', reshaped_arr.shape)
+    #
+    # Output:
+    #
+    # Original array shape: (6,)
+    # Reshaped array shape: (6, 1)
+
+    # IsolationForest:
+    # contamination == proportion of outliers in the data set
+    # random_state == controls the pseudo-randomness of the selection of the
+    #                 feature and split values for each branching step and
+    #                 each tree in the forest.amount of
+#    rgr = IsolationForest(contamination=0.2, random_state=42)
+#    rgr = EllipticEnvelope(contamination=0.2, random_state=42)
+#    rgr =  make_pipeline(
+#            Nystroem(gamma=0.1, random_state=42, n_components=21),
+#            SGDOneClassSVM(
+#                nu=0.2,
+#                shuffle=True,
+#                fit_intercept=True,
+#                random_state=42,
+#                tol=1e-6,
+#            )
+#        )
+    # predict(): gets a binary prediction for each record
+    # flatten(): return a copy of the array collapsed into one dimension
+    dy_dt = rgr.fit(x.reshape(-1, 1), dy.reshape(-1, 1)).predict(x.reshape(-1, 1)).flatten()
+
     msk = np.array([])
     for y in np.unique(dy_dt):
+        # compare unique element 'y' of predictions 'dy_dt'
         msk_ = dy_dt == y
         # choose the list with most elements
         if (np.count_nonzero(msk) < np.count_nonzero(msk_)):
@@ -64,10 +122,6 @@ class Model(abc.ABC):
         self._density = np.array(self._density)
         self._msk = outliers_mask(self._exposure, self._density)
         self._process()
-
-    @abc.abstractmethod
-    def model_name(self):
-        'model name'
 
     @property
     def exposure(self):
@@ -118,38 +172,18 @@ class Model(abc.ABC):
 
 
 'metric based on: Lambrecht/Woodhouse, Way Beyond Monochrome'
-class TheilSenRegressionModel(Model):
-    def __init__(self, data):
-        super(TheilSenRegressionModel, self).__init__(data)
-
-    def _process(self):
-        self._model = TheilSenRegressor().fit(self.exposure[self.msk].reshape(-1, 1), self.density[self.msk].reshape(-1, 1))
-        self._r2 = round(self._model.score(self.exposure[self.msk].reshape(-1, 1), self.density[self.msk].reshape(-1, 1)), 3)
-        self._gamma = self._model.coef_[0]
-        # exposure exposure_at_mindensity at min density = 0.17
-        self._exposure_at_min_density = round((0.17 - self._model.intercept_)/self._gamma, 2)
-        self._exposure_at_max_density = round((1.37 - self._model.intercept_)/self._gamma, 2)
-        self._null_point = round((0 - self._model.intercept_)/self._gamma, 2)
-
-    def model_name(self):
-        return __class__.__name__;
-
-
 class RANSACRegressionModel(Model):
     def __init__(self, data):
         super(RANSACRegressionModel, self).__init__(data)
 
     def _process(self):
         self._model = RANSACRegressor().fit(self.exposure[self.msk].reshape(-1, 1), self.density[self.msk].reshape(-1, 1))
-        self._r2 = round(self._model.score(self.exposure[self.msk].reshape(-1, 1), self.density[self.msk].reshape(-1, 1)), 3)
+        self._r2 = round(self._model.score(self.exposure[self.msk].reshape(-1, 1), self.density[self.msk].reshape(-1, 1)), 4)
         self._gamma = self._model.estimator_.coef_[0][0]
         # exposure exposure_at_mindensity at min density = 0.17
         self._exposure_at_min_density = round((0.17 - self._model.estimator_.intercept_[0])/self._gamma, 2)
         self._exposure_at_max_density = round((1.37 - self._model.estimator_.intercept_[0])/self._gamma, 2)
         self._null_point = round((0 - self._model.estimator_.intercept_[0])/self._gamma, 2)
-
-    def model_name(self):
-        return __class__.__name__;
 
 
 def relative_exposure(density):
@@ -200,10 +234,9 @@ def evaluate(file_p, model, meta):
     ax.set_ylabel('density')
     ax.legend(loc='upper left', bbox_to_anchor=(0.01, 0.99), borderaxespad=0.)
     handles, labels = ax.get_legend_handles_labels()
-    desc = 'gamma = {}\nr^2= {} ({})'.format(
+    desc = 'gamma = {}\nr^2= {}'.format(
         round(model.gamma, 2),
-        model.r_square,
-        model.model_name())
+        model.r_square)
     handles.append(mpatches.Patch(color='none', label=desc))
     plt.legend(handles=handles, fontsize=8)
     file_p = file_p.with_suffix('.png')
@@ -219,9 +252,7 @@ def serialize(result):
 
 def main(file):
     meta, data = parse_data(file)
-    model_theil = TheilSenRegressionModel(data)
-    model_ransac = RANSACRegressionModel(data)
-    result = evaluate(file, model_ransac, meta) if model_ransac.r_square > model_theil.r_square else evaluate(file, model_theil, meta)
+    result = evaluate(file, RANSACRegressionModel(data), meta)
     serialize(result)
 
 
