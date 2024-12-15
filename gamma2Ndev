@@ -23,21 +23,30 @@ import math
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
 from matplotlib.ticker import MultipleLocator
 from pathlib import Path
 from prettytable import PrettyTable
 from sklearn.linear_model import RANSACRegressor
-from sklearn.linear_model import TheilSenRegressor
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.ensemble import IsolationForest
+from scipy.stats import zscore
 
 
 def outliers_mask(x, y):
     dy = np.gradient(y, x)
+
     rgr = IsolationForest(contamination=float(.20), random_state=42)
     rgr.fit(x.reshape(-1, 1), dy.reshape(-1, 1))
     dy_dt = rgr.predict(x.reshape(-1, 1)).flatten()
+
+#    df = pd.DataFrame({'x': x, 'dy': dy})
+#    z_scores = zscore(df)
+#    threshold = 1
+#    dy_dt = (z_scores > threshold) | (z_scores < -threshold)
+#    dy_dt = dy_dt["x"]
+
     msk = np.array([])
     for y in np.unique(dy_dt):
         msk_ = dy_dt == y
@@ -60,10 +69,6 @@ class Model(abc.ABC):
         self._gamma = np.array(self._gamma)
         self._msk = outliers_mask(self._gamma, self._devtime)
         self._process()
-
-    @abc.abstractmethod
-    def model_name(self):
-        'model name'
 
     @property
     def devtime(self):
@@ -106,23 +111,6 @@ class Model(abc.ABC):
 
 
 'metric based on: Lambrecht/Woodhouse, Way Beyond Monochrome'
-class TheilSenRegressionModel(Model):
-    def __init__(self, data):
-        super(TheilSenRegressionModel, self).__init__(data)
-
-    def _process(self):
-        self._model = TheilSenRegressor().fit(self.gamma[self.msk].reshape(-1, 1), self.devtime[self.msk].reshape(-1, 1))
-        self._r2 = round(self._model.score(self.gamma[self.msk].reshape(-1, 1), self.devtime[self.msk].reshape(-1, 1)), 3)
-        self._Nplus2 = self.predict(np.array(0.8).reshape(-1, 1))[0]
-        self._Nplus1 = self.predict(np.array(0.67).reshape(-1, 1))[0]
-        self._N = self.predict(np.array(0.57).reshape(-1, 1))[0]
-        self._Nminus1 = self.predict(np.array(0.5).reshape(-1, 1))[0]
-        self._Nminus2 = self.predict(np.array(0.44).reshape(-1, 1))[0]
-
-    def model_name(self):
-        return __class__.__name__;
-
-
 class RANSACRegressionModel(Model):
     def __init__(self, data):
         super(RANSACRegressionModel, self).__init__(data)
@@ -135,9 +123,6 @@ class RANSACRegressionModel(Model):
         self._N = self.predict(np.array(0.57).reshape(-1, 1))[0][0]
         self._Nminus1 = self.predict(np.array(0.5).reshape(-1, 1))[0][0]
         self._Nminus2 = self.predict(np.array(0.44).reshape(-1, 1))[0][0]
-
-    def model_name(self):
-        return __class__.__name__;
 
 
 def format_devtime(devtime):
@@ -171,9 +156,8 @@ def evaluate(file, model):
     ax.set_ylabel('devtime')
     ax.legend(loc='upper left', bbox_to_anchor=(0.01, 0.99), borderaxespad=0.)
     handles, labels = ax.get_legend_handles_labels()
-    desc = 'r^2= {} ({})'.format(
-        model.r_square,
-        model.model_name())
+    desc = 'r^2= {}'.format(
+        model.r_square)
     handles.append(mpatches.Patch(color='none', label=desc))
     plt.legend(handles=handles, fontsize=8)
     file = file.with_suffix('.png')
@@ -200,9 +184,7 @@ def parse_data(file):
 
 def main(file):
     data = parse_data(file)
-    model_theil = TheilSenRegressionModel(data)
-    model_ransac = RANSACRegressionModel(data)
-    tbl = evaluate(file, model_ransac) if model_ransac.r_square > model_theil.r_square else evaluate(file, model_theil)
+    tbl = evaluate(file, RANSACRegressionModel(data))
     print(tbl)
 
 
